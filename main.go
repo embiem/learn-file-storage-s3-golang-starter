@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
+	s3utils "github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/s3"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -25,6 +30,30 @@ type apiConfig struct {
 	s3CfDistribution string
 	s3Client         *s3.Client
 	port             string
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	// If no videoURL present yet, then pass through
+	if video.VideoURL == nil {
+		return video, nil
+	}
+
+	parts := strings.Split(*video.VideoURL, ",")
+	slog.Info("VideoURL parts", "parts", parts)
+	if len(parts) != 2 {
+		return database.Video{}, errors.New("invalid videoURL")
+	}
+
+	bucket := parts[0]
+	key := parts[1]
+
+	url, err := s3utils.GeneratePresignedURL(cfg.s3Client, bucket, key, time.Minute*5)
+	if err != nil {
+		return database.Video{}, err
+	}
+
+	video.VideoURL = &url
+	return video, nil
 }
 
 func main() {
